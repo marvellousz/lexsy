@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+details summary {
+  list-style: none;
+}
+
+details summary::-webkit-details-marker {
+  display: none;
+}
+
+#filled-values-details[open] summary svg.filled-values-chevron {
+  transform: rotate(180deg);
+}
+
+#remaining-placeholders-details[open] summary svg.remaining-placeholders-chevron {
+  transform: rotate(180deg);
+}
+
+body {
+  @apply bg-white dark:bg-black text-gray-900 dark:text-gray-100 transition-colors;
+}
+
