@@ -255,53 +255,127 @@ export default function DocumentProcessor({
   const [isRemainingPlaceholdersOpen, setIsRemainingPlaceholdersOpen] = useState(true)
   const [isConversationHistoryOpen, setIsConversationHistoryOpen] = useState(false)
 
-  // Get sorted placeholder keys for better UX
-  // Sort so company fields come before investor fields
+  // Get sorted placeholder keys in the exact order specified
   const placeholderKeys = useMemo(() => {
     const keys = Array.from(placeholders.keys())
     
-    // Define field order within each section
-    const fieldOrder = [
-      // Company fields first
-      'Company Name',
-      'COMPANY',
-      'Company Name Field',
-      'Company Title',
-      'Company Address',
-      'Company Email',
-      // Then investor fields
-      'Investor Name',
-      'Investor Title',
-      'Investor Address',
-      'Investor Email',
-    ]
+    // Define the exact order as specified:
+    // 1. Company name
+    // 2. Investor name
+    // 3. Purchase amount (dollar value)
+    // 4. Date of the SAFE agreement
+    // 5. State of incorporation
+    // 6. Post-Money Valuation Cap (dollar value)
+    // 7. Governing law jurisdiction
+    // 8. Company signatory: name, title, address, email
+    // 9. Investor signatory: name, title, address, email
     
-    // Sort keys: company fields first, then investor fields, then others
-    return keys.sort((a, b) => {
-      const aIsCompany = a.toLowerCase().includes('company') || a === 'COMPANY'
-      const bIsCompany = b.toLowerCase().includes('company') || b === 'COMPANY'
-      const aIsInvestor = a.toLowerCase().includes('investor')
-      const bIsInvestor = b.toLowerCase().includes('investor')
+    // Helper function to determine the priority order of a placeholder
+    const getPlaceholderOrder = (key: string): number => {
+      const lowerKey = key.toLowerCase()
       
-      // Company fields come first
-      if (aIsCompany && !bIsCompany) return -1
-      if (!aIsCompany && bIsCompany) return 1
-      
-      // Investor fields come after company fields
-      if (aIsInvestor && !bIsInvestor && !bIsCompany) return -1
-      if (!aIsInvestor && bIsInvestor && !aIsCompany) return 1
-      
-      // Within same category, use field order
-      const aIndex = fieldOrder.indexOf(a)
-      const bIndex = fieldOrder.indexOf(b)
-      
-      if (aIndex !== -1 && bIndex !== -1) {
-        return aIndex - bIndex
+      // 1. Company name (first) - main company entity name
+      if (lowerKey === 'company name' || lowerKey === 'company') {
+        return 1
       }
-      if (aIndex !== -1) return -1
-      if (bIndex !== -1) return 1
       
-      // Default alphabetical for others
+      // 2. Investor name
+      if (lowerKey === 'investor name') {
+        return 2
+      }
+      
+      // 3. Purchase amount
+      if (lowerKey === 'purchase amount' || (lowerKey.includes('purchase') && lowerKey.includes('amount'))) {
+        return 3
+      }
+      
+      // 4. Date of the SAFE agreement
+      if (lowerKey.includes('date') && (lowerKey.includes('safe') || lowerKey.includes('agreement'))) {
+        return 4
+      }
+      if (lowerKey === 'date' || lowerKey === 'date of safe') {
+        return 4
+      }
+      
+      // 5. State of incorporation
+      if (lowerKey.includes('state') && lowerKey.includes('incorporation')) {
+        return 5
+      }
+      if (lowerKey === 'state of incorporation' || lowerKey === 'state') {
+        return 5
+      }
+      
+      // 6. Post-Money Valuation Cap
+      if (lowerKey.includes('valuation') || lowerKey.includes('cap') || lowerKey === 'post-money valuation cap') {
+        return 6
+      }
+      
+      // 7. Governing law jurisdiction
+      if (lowerKey.includes('governing') || lowerKey.includes('jurisdiction') || lowerKey.includes('law')) {
+        return 7
+      }
+      
+      // 8. Company signatory fields (name, title, address, email)
+      // Only match if it's NOT the main company name (which is order 1)
+      if (lowerKey.includes('company') && lowerKey !== 'company name' && lowerKey !== 'company') {
+        if (lowerKey.includes('name') && !lowerKey.includes('investor')) return 8.1
+        if (lowerKey.includes('title')) return 8.2
+        if (lowerKey.includes('address')) return 8.3
+        if (lowerKey.includes('email')) return 8.4
+      }
+      
+      // 9. Investor signatory fields (name, title, address, email)
+      if (lowerKey.includes('investor')) {
+        if (lowerKey.includes('name')) return 9.1
+        if (lowerKey.includes('title')) return 9.2
+        if (lowerKey.includes('address')) return 9.3
+        if (lowerKey.includes('email')) return 9.4
+      }
+      
+      // Default: put unknown fields at the end
+      return 999
+    }
+    
+    // Sort keys according to the specified order
+    return keys.sort((a, b) => {
+      const aOrder = getPlaceholderOrder(a)
+      const bOrder = getPlaceholderOrder(b)
+      
+      // Primary sort by order
+      if (aOrder !== bOrder) {
+        return aOrder - bOrder
+      }
+      
+      // Secondary sort: within same order group, maintain sub-order
+      // For company fields: Name -> Title -> Address -> Email
+      const aLower = a.toLowerCase()
+      const bLower = b.toLowerCase()
+      
+      // Company signatory fields (order 8.x)
+      if (aOrder >= 8 && aOrder < 9 && bOrder >= 8 && bOrder < 9) {
+        const companyOrder = ['name', 'title', 'address', 'email']
+        const aField = companyOrder.find(field => aLower.includes(field)) || ''
+        const bField = companyOrder.find(field => bLower.includes(field)) || ''
+        const aFieldIndex = companyOrder.indexOf(aField)
+        const bFieldIndex = companyOrder.indexOf(bField)
+        if (aFieldIndex !== -1 && bFieldIndex !== -1 && aFieldIndex !== bFieldIndex) {
+          return aFieldIndex - bFieldIndex
+        }
+      }
+      
+      // Investor signatory fields (order 9.x)
+      if (aOrder >= 9 && aOrder < 10 && bOrder >= 9 && bOrder < 10) {
+        const investorOrder = ['name', 'title', 'address', 'email']
+        const aField = investorOrder.find(field => aLower.includes(field)) || ''
+        const bField = investorOrder.find(field => bLower.includes(field)) || ''
+        const aFieldIndex = investorOrder.indexOf(aField)
+        const bFieldIndex = investorOrder.indexOf(bField)
+        if (aFieldIndex !== -1 && bFieldIndex !== -1 && aFieldIndex !== bFieldIndex) {
+          return aFieldIndex - bFieldIndex
+        }
+      }
+      
+      // Tertiary sort: alphabetical for same priority
       return a.localeCompare(b)
     })
   }, [placeholders])
@@ -317,13 +391,13 @@ export default function DocumentProcessor({
         generatePrompt(placeholder, [], documentContent.substring(0, 500)).then(prompt => {
           setConversation([{
             role: 'assistant',
-            message: prompt
+            message: prompt.trim()
           }])
           setIsAIThinking(false)
         }).catch(() => {
           setConversation([{
             role: 'assistant',
-            message: generateFallbackPrompt(placeholder)
+            message: generateFallbackPrompt(placeholder).trim()
           }])
           setIsAIThinking(false)
         })
@@ -394,12 +468,12 @@ export default function DocumentProcessor({
         const prompt = await generatePrompt(nextPlaceholder, qaHistory, documentContent.substring(0, 500))
         setConversation([...newConversation, {
           role: 'assistant',
-          message: prompt
+          message: prompt.trim()
         }])
       } catch {
         setConversation([...newConversation, {
           role: 'assistant',
-          message: generateFallbackPrompt(nextPlaceholder)
+          message: generateFallbackPrompt(nextPlaceholder).trim()
         }])
       }
     } else {
@@ -459,12 +533,12 @@ export default function DocumentProcessor({
         const prompt = await generatePrompt(nextPlaceholder, qaHistory, documentContent.substring(0, 500))
         setConversation([...newConversation, {
           role: 'assistant',
-          message: `Skipped. ${prompt}`
+          message: `Skipped. ${prompt.trim()}`
         }])
       } catch {
         setConversation([...newConversation, {
           role: 'assistant',
-          message: `Skipped. ${generateFallbackPrompt(nextPlaceholder)}`
+          message: `Skipped. ${generateFallbackPrompt(nextPlaceholder).trim()}`
         }])
       } finally {
         setIsAIThinking(false)
@@ -498,12 +572,12 @@ export default function DocumentProcessor({
       const prompt = await generatePrompt(placeholder, conversation, documentContent.substring(0, 500))
       setConversation(prev => [...prev, {
         role: 'assistant',
-        message: prompt
+        message: prompt.trim()
       }])
     } catch {
       setConversation(prev => [...prev, {
         role: 'assistant',
-        message: generateFallbackPrompt(placeholder)
+        message: generateFallbackPrompt(placeholder).trim()
       }])
     } finally {
       setIsAIThinking(false)
@@ -514,20 +588,30 @@ export default function DocumentProcessor({
     let completed = documentContent
 
     // Group placeholders by originalFormat to handle duplicates correctly
+    // For label-based fields, also consider context to ensure company/investor fields are separate
     const formatGroups = new Map<string, Array<{ key: string; data: PlaceholderData }>>()
     
     filled.forEach((data, key) => {
       const format = data.info.originalFormat
-      if (!formatGroups.has(format)) {
-        formatGroups.set(format, [])
+      // For label-based fields, include context in the group key to ensure separate handling
+      const groupKey = (format.endsWith(':') && !format.includes('[') && data.info.context)
+        ? `${format}:${data.info.context}:${data.info.position || 0}`
+        : format
+      
+      if (!formatGroups.has(groupKey)) {
+        formatGroups.set(groupKey, [])
       }
-      formatGroups.get(format)!.push({ key, data })
+      formatGroups.get(groupKey)!.push({ key, data })
     })
 
     // Replace placeholders, handling duplicates by replacing sequentially
-    formatGroups.forEach((group, originalFormat) => {
+    formatGroups.forEach((group, groupKey) => {
       group.forEach(({ key, data }) => {
         const { info, value } = data
+        // Extract originalFormat from groupKey (it might include context suffix)
+        const originalFormat = groupKey.includes(':') && !groupKey.includes('[') && info.context
+          ? groupKey.split(':')[0] + ':'
+          : info.originalFormat
         
         // Format the value - preserve prefix if it exists
         let formattedValue = value
@@ -539,51 +623,106 @@ export default function DocumentProcessor({
         // For label-based fields (like "Address:"), append value after the label
         if (originalFormat.endsWith(':') && !originalFormat.includes('[')) {
           // This is a label field - need to replace only the correct instance based on context
-          if (info.context) {
-            // Find the specific instance based on context
-            // For Company context, find Address: that appears after [COMPANY] or COMPANY
-            // For Investor context, find Address: that appears after INVESTOR
-            const contextMarker = info.context === 'company' 
-              ? /(?:\[COMPANY\]|COMPANY)/gi
-              : /(?:INVESTOR|INVESTOR:)/gi
-            
-            // Find all context markers
-            const contextMatches: Array<{ index: number; length: number }> = []
-            let match
-            const markerRegex = new RegExp(contextMarker.source, 'gi')
-            while ((match = markerRegex.exec(completed)) !== null) {
-              contextMatches.push({
-                index: match.index,
-                length: match[0].length
-              })
-            }
-            
-            // Find the label that belongs to this context
+          if (info.context !== undefined && info.position !== undefined) {
+            // Use the stored position to find the exact instance
+            // We need to find the label at approximately this position
             const labelPattern = new RegExp(originalFormat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
             let labelMatch
             let found = false
             
-            while ((labelMatch = labelPattern.exec(completed)) !== null && !found) {
+            // Find all label matches
+            const allLabels: Array<{ index: number; context: 'company' | 'investor' | null }> = []
+            while ((labelMatch = labelPattern.exec(completed)) !== null) {
+              // Determine context for this label instance
               const labelIndex = labelMatch.index
+              const beforeText = completed.substring(Math.max(0, labelIndex - 2000), labelIndex).toLowerCase()
+              const afterText = completed.substring(labelIndex, Math.min(completed.length, labelIndex + 500)).toLowerCase()
               
-              // Find the nearest context marker before this label
-              const relevantContext = contextMatches.find(ctx => 
-                labelIndex > ctx.index && 
-                labelIndex < ctx.index + ctx.length + 500 &&
-                ((info.context === 'company' && completed.substring(ctx.index, ctx.index + ctx.length).toLowerCase().includes('company')) ||
-                 (info.context === 'investor' && completed.substring(ctx.index, ctx.index + ctx.length).toLowerCase().includes('investor')))
-              )
+              // Find nearest COMPANY or INVESTOR marker before this label
+              const companyMarker = beforeText.lastIndexOf('company')
+              const investorMarker = beforeText.lastIndexOf('investor')
               
-              if (relevantContext) {
-                // Replace this specific instance
-                completed = completed.substring(0, labelIndex) + 
-                           originalFormat + ' ' + formattedValue + 
-                           completed.substring(labelIndex + originalFormat.length)
-                found = true
+              let context: 'company' | 'investor' | null = null
+              if (companyMarker > investorMarker && companyMarker >= 0) {
+                context = 'company'
+              } else if (investorMarker >= 0 && investorMarker > companyMarker) {
+                context = 'investor'
+              } else if (companyMarker >= 0) {
+                context = 'company'
+              } else if (investorMarker >= 0) {
+                context = 'investor'
+              }
+              
+              allLabels.push({ index: labelIndex, context })
+            }
+            
+            // Find the label that matches both context and position proximity
+            const matchingLabel = allLabels.find((label, idx) => {
+              if (label.context !== info.context) return false
+              // Check if this is the right instance by comparing positions
+              // We stored the position during detection, so find the one closest to that stored position
+              const positionDiff = Math.abs(label.index - info.position)
+              // Also check if this is the first occurrence of this context/type combination
+              const isFirstOfContext = allLabels.slice(0, idx).every(l => l.context !== info.context || l.index > label.index)
+              return isFirstOfContext || positionDiff < 500
+            })
+            
+            if (matchingLabel) {
+              // Replace this specific instance
+              completed = completed.substring(0, matchingLabel.index) + 
+                         originalFormat + ' ' + formattedValue + 
+                         completed.substring(matchingLabel.index + originalFormat.length)
+              found = true
+            }
+            
+            // If we didn't find a match, fall back to context-based search
+            if (!found) {
+              const contextMarker = info.context === 'company' 
+                ? /(?:\[COMPANY\]|COMPANY|COMPANY:)/gi
+                : /(?:INVESTOR|INVESTOR:)/gi
+              
+              const markerRegex = new RegExp(contextMarker.source, 'gi')
+              let markerMatch
+              const contextMatches: Array<{ index: number; length: number }> = []
+              
+              while ((markerMatch = markerRegex.exec(completed)) !== null) {
+                contextMatches.push({
+                  index: markerMatch.index,
+                  length: markerMatch[0].length
+                })
+              }
+              
+              // Find the label that belongs to this context
+              const labelRegex = new RegExp(originalFormat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
+              let labelMatch
+              
+              while ((labelMatch = labelRegex.exec(completed)) !== null && !found) {
+                const labelIndex = labelMatch.index
+                
+                // Find the nearest context marker before this label
+                const relevantContext = contextMatches.find(ctx => 
+                  labelIndex > ctx.index && 
+                  labelIndex < ctx.index + ctx.length + 1000 &&
+                  ((info.context === 'company' && completed.substring(ctx.index, ctx.index + ctx.length).toLowerCase().includes('company')) ||
+                   (info.context === 'investor' && completed.substring(ctx.index, ctx.index + ctx.length).toLowerCase().includes('investor')))
+                )
+                
+                if (relevantContext) {
+                  // Check if this label hasn't been replaced yet (no value after it)
+                  const afterLabel = completed.substring(labelIndex + originalFormat.length, labelIndex + originalFormat.length + 50).trim()
+                  if (!afterLabel || afterLabel.length === 0 || /^[_\s]*$/.test(afterLabel)) {
+                    // Replace this specific instance
+                    completed = completed.substring(0, labelIndex) + 
+                               originalFormat + ' ' + formattedValue + 
+                               completed.substring(labelIndex + originalFormat.length)
+                    found = true
+                    break
+                  }
+                }
               }
             }
             
-            // If we didn't find a match, fall back to first occurrence
+            // If still not found, fall back to first occurrence
             if (!found) {
               const firstIndex = completed.indexOf(originalFormat)
               if (firstIndex >= 0) {
@@ -658,13 +797,13 @@ export default function DocumentProcessor({
       </div>
 
       {currentPlaceholderKey && (
-        <div className="bg-white dark:bg-gray-950 rounded-lg p-6 border border-gray-200 dark:border-gray-900 space-y-4">
+        <div className="bg-white dark:bg-gray-950 rounded-lg p-6 border border-gray-200 dark:border-gray-900">
           {/* AI Question Display */}
           {conversation.length > 0 && conversation[conversation.length - 1].role === 'assistant' && (
-            <div className="flex justify-start">
+            <div className="flex justify-start mb-4">
               <div className="max-w-[90%] rounded-lg px-5 py-4 bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-white shadow-sm">
                 <p className="text-base leading-relaxed whitespace-pre-wrap">
-                  {conversation[conversation.length - 1].message}
+                  {conversation[conversation.length - 1].message.trim()}
                 </p>
               </div>
             </div>
